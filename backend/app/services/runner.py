@@ -1,0 +1,275 @@
+"""Pipeline orchestration: creates a run record, executes stages, logs each one."""
+import json
+import logging
+import time
+import uuid
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from ..errors import ValidationError
+from . import reconciliation, transform
+
+log = logging.getLogger("retailflow.runner")
+
+PIPELINE_NAMES = {
+    "dimensions": "Dimension Load (SCD2)",
+    "facts": "Fact Load (Order Items)",
+    "quality": "Data Quality Checks",
+    "reconciliation": "Revenue Reconciliation",
+    "master": "RetailFlow Master Pipeline",
+}
+
+STAGE_PLAN = {
+    "dimensions": [(1, "Extract from staging", "extract"), (2, "Load dimensions (SCD2)", "load")],
+    "facts": [(1, "Extract from staging", "extract"), (2, "Load fact tables", "load")],
+    "quality": [(1, "Execute data quality rules", "validate")],
+    "reconciliation": [(1, "Compare warehouse totals", "reconcile")],
+    "master": [
+        (1, "Extract from staging", "extract"),
+        (2, "Load dimensions (SCD2)", "load"),
+        (3, "Load fact tables", "load"),
+        (4, "Execute data quality rules", "validate"),
+        (5, "Reconcile totals", "reconcile"),
+    ],
+}
+
+ALLOWED_TRIGGERS = {"manual", "scheduled", "api", "pentaho", "seed"}
+
+
+def _trigger_type(value):
+    candidate = (value or "api").strip().lower()
+    return candidate if candidate in ALLOWED_TRIGGERS else "manual"
+
+
+def _pipeline_id(db, kind):
+    name = PIPELINE_NAMES[kind]
+    pid = db.execute(text("SELECT pipeline_id FROM app.etl_pipeline WHERE name = :n"), {"n": name}).scalar()
+    if pid is None:
+        raise ValidationError(f"Pipeline '{name}' is not registered")
+    return int(pid)
+
+
+def run_pipeline(db, kind, *, triggered_by="api", batch_id=None):
+    if kind not in STAGE_PLAN:
+        raise ValidationError(f"Unknown pipeline '{kind}'", details={"allowed": sorted(STAGE_PLAN)})
+
+    pid = _pipeline_id(db, kind)
+    run_uid = uuid.uuid4()
+    trigger = _trigger_type(triggered_by)
+    run_id = db.execute(text("""
+        INSERT INTO ops.etl_run_log
+            (run_uid, pipeline_id, batch_id, trigger_type, engine, status, started_at)
+        VALUES (:uid, :pid, :bid, :tt, 'retailflow-native', 'running', now())
+        RETURNING run_id
+    """), {"uid": run_uid, "pid": pid, "bid": batch_id, "tt": trigger}).scalar_one()
+    db.commit()
+
+    started = time.perf_counter()
+    rows_read = rows_inserted = rows_rejected = 0
+    log_lines = [f"run {run_uid} pipeline={kind} triggered_by={trigger}"]
+
+    try:
+        for order, stage_name, stage_kind in STAGE_PLAN[kind]:
+            stage_started = time.perf_counter()
+            message = None
+            rows_in = rows_out = stage_rejected = 0
+
+            if stage_kind == "extract":
+                rows_in = db.execute(text("""
+                    SELECT count(*) FROM staging.stg_order_items
+                    WHERE validation_status = 'valid'
+                """)).scalar_one()
+                rows_out = rows_in
+                rows_read = int(rows_in)
+                message = f"{rows_in} valid staging rows available"
+
+            elif stage_kind == "load" and "dimension" in stage_name.lower():
+                stats = transform.load_dimensions(db, str(batch_id) if batch_id else None)
+                rows_out = sum(v for v in stats.values())
+                rows_inserted += int(rows_out)
+                message = ", ".join(f"{k}={v}" for k, v in stats.items())
+
+            elif stage_kind == "load":
+                stats = transform.load_facts(db, str(batch_id) if batch_id else None)
+                rows_out = sum(v for v in stats.values())
+                rows_inserted += int(rows_out)
+                message = ", ".join(f"{k}={v}" for k, v in stats.items())
+
+            elif stage_kind == "validate":
+                summary = _run_quality(db, run_id, batch_id)
+                rows_in = summary["checked"]
+                rows_out = summary["passed"]
+                stage_rejected = summary["failed_rules"]
+                rows_rejected = summary["failed_rules"]
+                message = f"{summary['passed']}/{summary['rules']} rules passed"
+
+            elif stage_kind == "reconcile":
+                results = reconciliation.reconcile(db, run_id=run_id)
+                failed = [r for r in results if r["status"] == "mismatch"]
+                rows_in = len(results)
+                rows_out = len(results) - len(failed)
+                stage_rejected = len(failed)
+                message = "; ".join(
+                    f"{r['check_code']}: source={float(r['source_value']):.2f} "
+                    f"target={float(r['target_value']):.2f} {r['status']}"
+                    for r in results
+                )
+
+            duration_ms = round((time.perf_counter() - stage_started) * 1000, 2)
+            db.execute(text("""
+                INSERT INTO ops.etl_stage_log
+                    (run_id, stage_order, stage_name, stage_kind, status, rows_in, rows_out,
+                     rows_rejected, started_at, finished_at, duration_ms, message)
+                VALUES (:rid, :ord, :nm, :kind, 'succeeded', :rin, :rout, :rrej,
+                        now(), now(), :ms, :msg)
+            """), {"rid": run_id, "ord": order, "nm": stage_name, "kind": stage_kind,
+                   "rin": rows_in, "rout": rows_out, "rrej": stage_rejected,
+                   "ms": duration_ms, "msg": message})
+            db.commit()
+            log_lines.append(f"stage {order} {stage_name}: {message}")
+
+        total_ms = round((time.perf_counter() - started) * 1000, 2)
+        db.execute(text("""
+            UPDATE ops.etl_run_log
+            SET status = 'succeeded', finished_at = now(), duration_ms = :ms,
+                rows_read = :rr, rows_inserted = :ri, rows_rejected = :rj,
+                execution_metadata = cast(:meta AS jsonb)
+            WHERE run_id = :rid
+        """), {"ms": total_ms, "rr": rows_read, "ri": rows_inserted, "rj": rows_rejected,
+               "meta": json.dumps({"log": log_lines}), "rid": run_id})
+        db.commit()
+
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        total_ms = round((time.perf_counter() - started) * 1000, 2)
+        log_lines.append(f"FAILED: {type(exc).__name__}: {exc}")
+        db.execute(text("""
+            UPDATE ops.etl_run_log
+            SET status = 'failed', finished_at = now(), duration_ms = :ms,
+                error_summary = :err, execution_metadata = cast(:meta AS jsonb)
+            WHERE run_id = :rid
+        """), {"ms": total_ms, "err": f"{type(exc).__name__}: {exc}",
+               "meta": json.dumps({"log": log_lines}), "rid": run_id})
+        db.commit()
+        log.error("pipeline %s failed: %s", kind, exc)
+        raise
+
+    return get_run(db, run_id)
+
+
+def _run_quality(db, run_id, batch_id):
+    """Re-evaluate active rules against the current warehouse and store results."""
+    rules = db.execute(text("""
+        SELECT rule_id, rule_code, expression, severity, dataset, target_table
+        FROM ops.data_quality_rules WHERE is_active ORDER BY rule_id
+    """)).mappings().all()
+
+    checked = db.execute(text("SELECT count(*) FROM warehouse.fact_order_items")).scalar_one()
+    passed = failed = 0
+    for rule in rules:
+        code = rule["rule_code"]
+        failures = 0
+        denominator = None
+
+        if code == "OI_DUPLICATE_KEY":
+            failures = db.execute(text("""
+                SELECT count(*) FROM (
+                    SELECT order_id, order_item_id FROM warehouse.fact_order_items
+                    GROUP BY order_id, order_item_id HAVING count(*) > 1) d
+            """)).scalar_one()
+        elif code in ("OI_PRODUCT_REF",):
+            failures = db.execute(text("""
+                SELECT count(*) FROM warehouse.fact_order_items f
+                LEFT JOIN warehouse.dim_product p ON p.product_sk = f.product_sk WHERE p.product_sk IS NULL
+            """)).scalar_one()
+        elif code in ("OI_SELLER_REF",):
+            failures = db.execute(text("""
+                SELECT count(*) FROM warehouse.fact_order_items f
+                LEFT JOIN warehouse.dim_seller s ON s.seller_sk = f.seller_sk WHERE s.seller_sk IS NULL
+            """)).scalar_one()
+        elif code == "OI_PRICE_NONNEGATIVE":
+            failures = db.execute(text("SELECT count(*) FROM warehouse.fact_order_items WHERE price < 0")).scalar_one()
+        elif code == "OI_DATE_IN_RANGE":
+            failures = db.execute(text("""
+                SELECT count(*) FROM warehouse.fact_order_items f JOIN warehouse.dim_date d USING (date_key)
+                WHERE d.full_date < DATE '2016-01-01' OR d.full_date > DATE '2020-12-31'
+            """)).scalar_one()
+        elif code == "OI_STATUS_ALLOWED":
+            failures = db.execute(text("""
+                SELECT count(*) FROM warehouse.fact_order_items
+                WHERE order_status NOT IN ('delivered','shipped','canceled','unavailable',
+                                           'invoiced','processing','created','approved')
+            """)).scalar_one()
+        else:
+            # Rules already evaluated at ingestion: take the most recent outcome for
+            # this rule and reuse its own population (passed+failed) as the denominator.
+            outcome = db.execute(text("""
+                SELECT passed_count, failed_count FROM ops.data_quality_results
+                WHERE rule_id = :rule
+                ORDER BY last_executed_at DESC, result_id DESC LIMIT 1
+            """), {"rule": rule["rule_id"]}).first()
+            if outcome:
+                failures = int(outcome[1] or 0)
+                denominator = max(int(outcome[0] or 0) + failures, 1)
+            else:
+                failures = 0
+
+        denominator = denominator or (int(checked) or 1)
+        failures = int(failures)
+        passed_count = max(denominator - failures, 0)
+        # failure_rate is a true fraction in [0,1] and must fit numeric(7,6);
+        # clamp so an over-count can never overflow the column.
+        failure_rate = min(round(failures / denominator, 6), 1.0)
+        # Use the SAME configurable threshold as the ingestion path
+        # (app.app_setting.dq_pass_threshold) so both writers of
+        # ops.data_quality_results classify an outcome identically.
+        _pr = round(passed_count / denominator, 4)
+        try:
+            _raw = db.execute(text("SELECT value FROM app.app_setting WHERE key = 'dq_pass_threshold'")).scalar()
+            _threshold = float(_raw) if _raw else 0.98
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            _threshold = 0.98
+        status = "passed" if _pr >= _threshold else ("warning" if failures < denominator else "failed")
+        if failures > 0 and status == "passed":
+            status = "warning"
+        if status == "passed":
+            passed += 1
+        else:
+            failed += 1
+
+        db.execute(text("""
+            INSERT INTO ops.data_quality_results
+                (run_id, rule_id, dataset, severity, passed_count, failed_count,
+                 failure_rate, status, last_executed_at)
+            VALUES (:rid, :rule, :ds, :sev, :pc, :fc, :fr, :st, now())
+        """), {"rid": run_id, "rule": rule["rule_id"], "ds": rule["dataset"],
+               "sev": rule["severity"], "pc": passed_count, "fc": failures,
+               "fr": failure_rate, "st": status})
+    db.commit()
+
+    return {"rules": len(rules), "passed": passed, "failed_rules": failed, "checked": int(checked)}
+
+
+def get_run(db, run_id):
+    row = db.execute(text("""
+        SELECT r.run_id::text,
+               CASE r.status WHEN 'succeeded' THEN 'completed'
+                             WHEN 'partial'   THEN 'completed_with_rejects'
+                             ELSE r.status END AS status,
+               r.trigger_type AS triggered_by, r.started_at, r.finished_at,
+               r.duration_ms, r.rows_read, r.rows_inserted AS rows_loaded, r.rows_rejected,
+               r.error_summary AS error_message, r.execution_metadata AS log_output,
+               p.name AS pipeline_name
+        FROM ops.etl_run_log r JOIN app.etl_pipeline p USING (pipeline_id)
+        WHERE r.run_id = :rid
+    """), {"rid": run_id}).mappings().one()
+    stages = db.execute(text("""
+        SELECT stage_log_id, stage_order, stage_name, status, rows_in, rows_out,
+               duration_ms, message
+        FROM ops.etl_stage_log WHERE run_id = :rid ORDER BY stage_order
+    """), {"rid": run_id}).mappings()
+    payload = dict(row)
+    payload["stages"] = [dict(s) for s in stages]
+    return payload

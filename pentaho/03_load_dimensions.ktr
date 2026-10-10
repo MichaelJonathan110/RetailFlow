@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<transformation>
+  <info>
+    <name>03 - Load dimensions (SCD2)</name>
+    <description>RetailFlow: 03 - Load dimensions (SCD2)</description>
+    <extended_description/>
+    <trans_version/>
+    <trans_type>Normal</trans_type>
+    <trans_status>0</trans_status>
+    <directory>/RetailFlow</directory>
+    <parameters/>
+  </info>
+  <connection>
+    <name>RetailFlow-PostgreSQL</name>
+    <server>localhost</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>retailflow</database>
+    <port>5432</port>
+    <username>retailflow</username>
+    <password>Encrypted </password>
+  </connection>
+  <order>
+  <order>
+    <from>Upsert dim_product</from>
+    <to>Upsert dim_seller</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Upsert dim_seller</from>
+    <to>Insert new customers</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Insert new customers</from>
+    <to>Close changed versions</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Close changed versions</from>
+    <to>Open new versions</to>
+    <enabled>Y</enabled>
+  </order>
+  </order>
+  <step>
+    <name>Upsert dim_product</name>
+    <type>ExecuteSQL</type>
+    <description>Insert or update product attributes</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO warehouse.dim_product (product_id, product_category, product_name) SELECT DISTINCT product_id, product_category, product_name FROM staging.stg_products WHERE validation_status='valid' AND product_id IS NOT NULL ON CONFLICT (product_id) DO UPDATE SET product_category = EXCLUDED.product_category, product_name = EXCLUDED.product_name, updated_at = now()</sql>
+  </step>
+  <step>
+    <name>Upsert dim_seller</name>
+    <type>ExecuteSQL</type>
+    <description>Insert sellers</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO warehouse.dim_seller (seller_id, seller_city, seller_state) SELECT DISTINCT seller_id, seller_city, seller_state FROM staging.stg_sellers WHERE validation_status='valid' AND seller_id IS NOT NULL ON CONFLICT (seller_id) DO NOTHING</sql>
+  </step>
+  <step>
+    <name>Insert new customers</name>
+    <type>ExecuteSQL</type>
+    <description>SCD2 step 1: brand-new customers</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO warehouse.dim_customer (customer_id, customer_unique_id, customer_city, customer_state) SELECT DISTINCT s.customer_id, s.customer_unique_id, s.customer_city, s.customer_state FROM staging.stg_customers s WHERE s.validation_status='valid' AND s.customer_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM warehouse.dim_customer d WHERE d.customer_id = s.customer_id)</sql>
+  </step>
+  <step>
+    <name>Close changed versions</name>
+    <type>ExecuteSQL</type>
+    <description>SCD2 step 2: expire rows whose tracked attributes changed</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>UPDATE warehouse.dim_customer d SET valid_to = now(), is_current = false WHERE d.is_current AND EXISTS (SELECT 1 FROM staging.stg_customers s WHERE s.customer_id = d.customer_id AND s.validation_status='valid' AND (coalesce(d.customer_city,'') IS DISTINCT FROM coalesce(s.customer_city,'') OR coalesce(d.customer_state,'') IS DISTINCT FROM coalesce(s.customer_state,'')))
+</sql>  </step>
+  <step>
+    <name>Open new versions</name>
+    <type>ExecuteSQL</type>
+    <description>SCD2 step 3: open the new current version</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO warehouse.dim_customer (customer_id, customer_unique_id, customer_city, customer_state, version) SELECT d.customer_id, d.customer_unique_id, d.customer_city, d.customer_state, d.version + 1 FROM warehouse.dim_customer d WHERE NOT d.is_current AND NOT EXISTS (SELECT 1 FROM warehouse.dim_customer c WHERE c.customer_id = d.customer_id AND c.is_current)</sql>
+  </step>
+  <step_error_handling/>
+  <slave-step-copy-partition-distribution/>
+  <slave_transformation>N</slave_transformation>
+</transformation>

@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<transformation>
+  <info>
+    <name>02 - Validate order items</name>
+    <description>RetailFlow: 02 - Validate order items</description>
+    <extended_description/>
+    <trans_version/>
+    <trans_type>Normal</trans_type>
+    <trans_status>0</trans_status>
+    <directory>/RetailFlow</directory>
+    <parameters/>
+  </info>
+  <connection>
+    <name>RetailFlow-PostgreSQL</name>
+    <server>localhost</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>retailflow</database>
+    <port>5432</port>
+    <username>retailflow</username>
+    <password>Encrypted </password>
+  </connection>
+  <order>
+  <order>
+    <from>Read staging rows</from>
+    <to>Validate types and nulls</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Validate types and nulls</from>
+    <to>Valid rows</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Validate types and nulls</from>
+    <to>Reject rows</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Reject rows</from>
+    <to>Write rejected_record</to>
+    <enabled>Y</enabled>
+  </order>
+  <order>
+    <from>Valid rows</from>
+    <to>Mark validated</to>
+    <enabled>Y</enabled>
+  </order>
+  </order>
+  <step>
+    <name>Read staging rows</name>
+    <type>TableInput</type>
+    <description>Read rows awaiting validation</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>SELECT stg_id, order_id, order_item_id, price, freight_value, order_purchase_ts, order_status FROM staging.stg_order_items WHERE validation_status = 'pending'</sql>
+  </step>
+  <step>
+    <name>Validate types and nulls</name>
+    <type>ScriptValueMod</type>
+    <description>Apply the same checks as ops.data_quality_rules</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+  </step>
+  <step>
+    <name>Valid rows</name>
+    <type>FilterRows</type>
+    <description>Pass rows with no failure</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+  </step>
+  <step>
+    <name>Reject rows</name>
+    <type>FilterRows</type>
+    <description>Route failures to the reject log</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+  </step>
+  <step>
+    <name>Write rejected_record</name>
+    <type>TableOutput</type>
+    <description>Quarantine with a reason</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <schema>ops</schema>
+    <table>rejected_record</table>
+  </step>
+  <step>
+    <name>Mark validated</name>
+    <type>ExecuteSQL</type>
+    <description>Set validation_status on staging rows</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>UPDATE staging.stg_order_items SET validation_status = 'valid' WHERE validation_status = 'pending'</sql>
+  </step>
+  <step_error_handling/>
+  <slave-step-copy-partition-distribution/>
+  <slave_transformation>N</slave_transformation>
+</transformation>

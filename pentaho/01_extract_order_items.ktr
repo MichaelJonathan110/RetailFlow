@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<transformation>
+  <info>
+    <name>01 - Extract order items</name>
+    <description>RetailFlow: 01 - Extract order items</description>
+    <extended_description/>
+    <trans_version/>
+    <trans_type>Normal</trans_type>
+    <trans_status>0</trans_status>
+    <directory>/RetailFlow</directory>
+    <parameters/>
+  </info>
+  <connection>
+    <name>RetailFlow-PostgreSQL</name>
+    <server>localhost</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>retailflow</database>
+    <port>5432</port>
+    <username>retailflow</username>
+    <password>Encrypted </password>
+  </connection>
+  <order>
+  <order>
+    <from>Read order_items.csv</from>
+    <to>Stage to stg_order_items</to>
+    <enabled>Y</enabled>
+  </order>
+  </order>
+  <step>
+    <name>Read order_items.csv</name>
+    <type>CSVInput</type>
+    <description>Read the order-item export</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <filename>sample-data/order_items.csv</filename>
+    <delimiter>,</delimiter>
+    <encoding>UTF-8</encoding>
+    <header>Y</header>
+    <fields>
+      <field><name>order_id</name><type>String</type></field>
+      <field><name>order_item_id</name><type>String</type></field>
+      <field><name>customer_id</name><type>String</type></field>
+      <field><name>product_id</name><type>String</type></field>
+      <field><name>seller_id</name><type>String</type></field>
+      <field><name>order_status</name><type>String</type></field>
+      <field><name>order_purchase_ts</name><type>String</type></field>
+      <field><name>price</name><type>String</type></field>
+      <field><name>freight_value</name><type>String</type></field>
+      <field><name>payment_value</name><type>String</type></field>
+      <field><name>customer_city</name><type>String</type></field>
+      <field><name>customer_state</name><type>String</type></field>
+    </fields>
+  </step>
+  <step>
+    <name>Stage to stg_order_items</name>
+    <type>TableOutput</type>
+    <description>Land raw rows in staging</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <schema>staging</schema>
+    <table>stg_order_items</table>
+    <commit>1000</commit>
+  </step>
+  <step_error_handling/>
+  <slave-step-copy-partition-distribution/>
+  <slave_transformation>N</slave_transformation>
+</transformation>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<transformation>
+  <info>
+    <name>06 - Data quality and reconciliation</name>
+    <description>RetailFlow: 06 - Data quality and reconciliation</description>
+    <extended_description/>
+    <trans_version/>
+    <trans_type>Normal</trans_type>
+    <trans_status>0</trans_status>
+    <directory>/RetailFlow</directory>
+    <parameters/>
+  </info>
+  <connection>
+    <name>RetailFlow-PostgreSQL</name>
+    <server>localhost</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>retailflow</database>
+    <port>5432</port>
+    <username>retailflow</username>
+    <password>Encrypted </password>
+  </connection>
+  <order>
+  <order>
+    <from>Record DQ results</from>
+    <to>Record reconciliation</to>
+    <enabled>Y</enabled>
+  </order>
+  </order>
+  <step>
+    <name>Record DQ results</name>
+    <type>ExecuteSQL</type>
+    <description>Persist per-rule outcomes</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO ops.data_quality_results (rule_code, dataset, severity, status, rows_checked, rows_failed, pass_rate) SELECT r.rule_code, r.dataset, r.severity, CASE WHEN r.failures = 0 THEN 'passed' WHEN r.failures::numeric / greatest(r.checked,1) < 0.02 THEN 'warning' ELSE 'failed' END, r.checked, r.failures, round((r.checked - r.failures)::numeric / greatest(r.checked,1), 4) FROM (SELECT r.rule_code, r.dataset, r.severity, (SELECT count(*) FROM warehouse.fact_order_items) AS checked, (SELECT count(*) FROM ops.rejected_record rj WHERE rj.rule_code = r.rule_code) AS failures FROM ops.data_quality_rules r WHERE r.is_active) r</sql>
+  </step>
+  <step>
+    <name>Record reconciliation</name>
+    <type>ExecuteSQL</type>
+    <description>Compare order-item revenue against payment revenue</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO ops.data_reconciliation_results (scope, expected_value, actual_value, variance, variance_pct, tolerance_pct, status, note) SELECT 'revenue_total', i.item_revenue, p.payment_revenue, p.payment_revenue - i.item_revenue, CASE WHEN i.item_revenue = 0 THEN 0 ELSE round((p.payment_revenue - i.item_revenue) / i.item_revenue, 6) END, 0.005, CASE WHEN i.item_revenue = 0 THEN 'passed' WHEN abs((p.payment_revenue - i.item_revenue) / i.item_revenue) &lt;= 0.005 THEN 'passed' ELSE 'failed' END, 'Item revenue vs payment revenue' FROM (SELECT coalesce(sum(price),0) AS item_revenue FROM warehouse.fact_order_items) i CROSS JOIN (SELECT coalesce(sum(payment_value),0) AS payment_revenue FROM warehouse.fact_payments) p</sql>
+  </step>
+  <step_error_handling/>
+  <slave-step-copy-partition-distribution/>
+  <slave_transformation>N</slave_transformation>
+</transformation>

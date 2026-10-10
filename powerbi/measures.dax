@@ -1,0 +1,163 @@
+// ============================================================================
+// RetailFlow — DAX measures
+// Paste into a dedicated "_Measures" table.
+// Rule: revenue is measured from analytics.v_order_items (grain: order item).
+//       Average Order Value MUST come from analytics.v_orders (grain: order).
+// ============================================================================
+
+// ---------------------------------------------------------------- Revenue
+Total Revenue = SUM ( v_order_items[total_item_value] )
+
+Item Revenue = SUM ( v_order_items[price] )
+
+Freight Revenue = SUM ( v_order_items[freight_value] )
+
+Total Units = SUM ( v_order_items[quantity] )
+
+Total Orders = DISTINCTCOUNT ( v_order_items[order_id] )
+
+Total Line Items = COUNTROWS ( v_order_items )
+
+// ------------------------------------------------------- Average order value
+// From v_orders so the denominator is orders, not line items.
+Average Order Value = DIVIDE ( SUM ( v_orders[total_revenue] ), COUNTROWS ( v_orders ) )
+
+Average Items per Order = DIVIDE ( SUM ( v_orders[item_count] ), COUNTROWS ( v_orders ) )
+
+Revenue per Item = DIVIDE ( [Total Revenue], [Total Line Items] )
+
+// ------------------------------------------------------------ Time intelligence
+Revenue PM =
+CALCULATE ( [Total Revenue], DATEADD ( dim_date[full_date], -1, MONTH ) )
+
+Revenue MoM % =
+VAR Prior = [Revenue PM]
+RETURN DIVIDE ( [Total Revenue] - Prior, Prior )
+
+Revenue PY =
+CALCULATE ( [Total Revenue], SAMEPERIODLASTYEAR ( dim_date[full_date] ) )
+
+Revenue YoY % =
+VAR Prior = [Revenue PY]
+RETURN DIVIDE ( [Total Revenue] - Prior, Prior )
+
+Revenue YTD =
+TOTALYTD ( [Total Revenue], dim_date[full_date] )
+
+Revenue 3M Rolling =
+CALCULATE ( [Total Revenue], DATESINPERIOD ( dim_date[full_date], MAX ( dim_date[full_date] ), -3, MONTH ) )
+
+// ------------------------------------------------------------------ Orders
+Orders PM =
+CALCULATE ( [Total Orders], DATEADD ( dim_date[full_date], -1, MONTH ) )
+
+Orders MoM % =
+VAR Prior = [Orders PM]
+RETURN DIVIDE ( [Total Orders] - Prior, Prior )
+
+Delivered Rate =
+DIVIDE (
+    CALCULATE ( [Total Orders], v_order_items[order_status] = "delivered" ),
+    [Total Orders]
+)
+
+Cancellation Rate =
+DIVIDE (
+    CALCULATE ( [Total Orders], v_order_items[order_status] = "canceled" ),
+    [Total Orders]
+)
+
+// ----------------------------------------------------------------- Payments
+Payment Value = SUM ( fact_payments[payment_value] )
+
+Payment Share of Total =
+DIVIDE ( [Payment Value], CALCULATE ( [Payment Value], ALL ( fact_payments[payment_type] ) ) )
+
+// -------------------------------------------------------- Reconciliation
+Reconciled Item Revenue = MAX ( v_revenue_reconciliation[order_items_revenue] )
+
+Reconciled Payment Revenue = MAX ( v_revenue_reconciliation[payments_revenue] )
+
+Reconciliation Variance = [Reconciled Payment Revenue] - [Reconciled Item Revenue]
+
+Reconciliation Variance % =
+DIVIDE ( [Reconciliation Variance], [Reconciled Item Revenue] )
+
+Reconciliation Tolerance % = 0.005
+
+Reconciliation Status =
+VAR VariancePct = ABS ( [Reconciliation Variance %] )
+VAR Tolerance = [Reconciliation Tolerance %]
+RETURN
+    SWITCH (
+        TRUE (),
+        ISBLANK ( VariancePct ), "No data",
+        VariancePct <= Tolerance, "PASS",
+        "FAIL"
+    )
+
+// --------------------------------------------------------- Data quality
+DQ Rules Checked =
+DISTINCTCOUNT ( data_quality_rules[rule_code] )
+
+DQ Rules Passed =
+CALCULATE ( [DQ Rules Checked], data_quality_results[status] = "passed" )
+
+DQ Rules Failed =
+CALCULATE ( [DQ Rules Checked], data_quality_results[status] = "failed" )
+
+DQ Average Pass Rate =
+AVERAGEX ( VALUES ( data_quality_rules[rule_code] ), CALCULATE ( AVERAGE ( 1 - data_quality_results[failure_rate] ) ) )
+
+DQ Failed Rows =
+SUM ( data_quality_results[failed_count] )
+
+Rejected Records =
+COUNTROWS ( etl_rejects )
+
+Critical Rejected Records =
+CALCULATE ( [Rejected Records], data_quality_rules[severity] = "critical" )
+
+// -------------------------------------------------------------------- ETL
+ETL Runs = COUNTROWS ( etl_run_log )
+
+ETL Failures =
+CALCULATE ( [ETL Runs], etl_run_log[status] = "failed" )
+
+ETL Success Rate = DIVIDE ( [ETL Runs] - [ETL Failures], [ETL Runs] )
+
+Average Run Duration (s) = DIVIDE ( AVERAGE ( etl_run_log[duration_ms] ), 1000 )
+
+Last Successful Run =
+CALCULATE ( MAX ( etl_run_log[finished_at] ), etl_run_log[status] = "succeeded" )
+
+Rows Loaded =
+SUM ( etl_run_log[rows_inserted] )
+
+// ------------------------------------------------------------ Ranking / share
+Revenue by Category % =
+DIVIDE ( [Total Revenue], CALCULATE ( [Total Revenue], ALL ( dim_product[product_category] ) ) )
+
+Category Rank =
+RANKX ( ALL ( dim_product[product_category] ), [Total Revenue],, DESC, DENSE )
+
+Top Product Revenue =
+CALCULATE ( [Total Revenue], TOPN ( 1, VALUES ( dim_product[product_id] ), [Total Revenue], DESC ) )
+
+// ------------------------------------------------------------------ Customer
+Customers =
+CALCULATE ( DISTINCTCOUNT ( v_order_items[customer_unique_id] ), v_order_items[customer_unique_id] <> BLANK () )
+
+Repeat Customers =
+COUNTROWS (
+    FILTER (
+        VALUES ( v_order_items[customer_unique_id] ),
+        CALCULATE ( DISTINCTCOUNT ( v_order_items[order_id] ) ) > 1
+    )
+)
+
+Repeat Rate = DIVIDE ( [Repeat Customers], [Customers] )
+
+// ------------------------------------------------------------ Conditional fmt
+Revenue Colour =
+SWITCH ( TRUE (), [Reconciliation Status] = "FAIL", "#e5544b", [Reconciliation Status] = "PASS", "#2fbf8f", "#a3adcd" )

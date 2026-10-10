@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<job>
+  <name>RetailFlow Master Pipeline</name>
+  <description>Extract, validate, load dimensions, load facts, run quality and reconciliation.</description>
+  <extended_description/>
+  <job_version/>
+  <job_status>0</job_status>
+  <directory>/RetailFlow</directory>
+  <connection>
+    <name>RetailFlow-PostgreSQL</name>
+    <server>localhost</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>retailflow</database>
+    <port>5432</port>
+    <username>retailflow</username>
+    <password>Encrypted </password>
+  </connection>
+
+  <entries>
+    <entry>
+      <name>Start</name>
+      <type>SPECIAL</type>
+      <start>Y</start>
+      <draw>Y</draw>
+      <xloc>96</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>01 Extract order items</name>
+      <type>TRANS</type>
+      <filename>pentaho/01_extract_order_items.ktr</filename>
+      <run_configuration>local</run_configuration>
+      <xloc>288</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>02 Validate order items</name>
+      <type>TRANS</type>
+      <filename>pentaho/02_validate_order_items.ktr</filename>
+      <run_configuration>local</run_configuration>
+      <xloc>480</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>03 Load dimensions</name>
+      <type>TRANS</type>
+      <filename>pentaho/03_load_dimensions.ktr</filename>
+      <run_configuration>local</run_configuration>
+      <xloc>672</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>04 Load fact order items</name>
+      <type>TRANS</type>
+      <filename>pentaho/04_load_fact_order_items.ktr</filename>
+      <run_configuration>local</run_configuration>
+      <xloc>864</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>05 Load payments</name>
+      <type>TRANS</type>
+      <filename>pentaho/05_load_payments.ktr</filename>
+      <run_configuration>local</run_configuration>
+      <xloc>1056</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>06 Quality and reconciliation</name>
+      <type>TRANS</type>
+      <filename>pentaho/06_data_quality_and_reconciliation.ktr</filename>
+      <run_configuration>local</run_configuration>
+      <xloc>1248</xloc><yloc>64</yloc>
+    </entry>
+    <entry>
+      <name>Success</name>
+      <type>SUCCESS</type>
+      <xloc>1440</xloc><yloc>64</yloc>
+    </entry>
+  </entries>
+
+  <hops>
+    <hop><from>Start</from><to>01 Extract order items</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+    <hop><from>01 Extract order items</from><to>02 Validate order items</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+    <hop><from>02 Validate order items</from><to>03 Load dimensions</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+    <hop><from>03 Load dimensions</from><to>04 Load fact order items</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+    <hop><from>04 Load fact order items</from><to>05 Load payments</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+    <hop><from>05 Load payments</from><to>06 Quality and reconciliation</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+    <hop><from>06 Quality and reconciliation</from><to>Success</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
+  </hops>
+
+  <notepads/>
+</job>

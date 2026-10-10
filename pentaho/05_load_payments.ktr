@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<transformation>
+  <info>
+    <name>05 - Load payments</name>
+    <description>RetailFlow: 05 - Load payments</description>
+    <extended_description/>
+    <trans_version/>
+    <trans_type>Normal</trans_type>
+    <trans_status>0</trans_status>
+    <directory>/RetailFlow</directory>
+    <parameters/>
+  </info>
+  <connection>
+    <name>RetailFlow-PostgreSQL</name>
+    <server>localhost</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>retailflow</database>
+    <port>5432</port>
+    <username>retailflow</username>
+    <password>Encrypted </password>
+  </connection>
+  <order>
+
+  </order>
+  <step>
+    <name>Load fact_payments</name>
+    <type>ExecuteSQL</type>
+    <description>Insert payment transactions</description>
+    <distribute>Y</distribute>
+    <copies>1</copies>
+    <connection>RetailFlow-PostgreSQL</connection>
+    <sql>INSERT INTO warehouse.fact_payments (order_id, payment_sequential, date_key, payment_type, payment_value) SELECT p.order_id, p.payment_sequential::int, (SELECT min(f.date_key) FROM warehouse.fact_order_items f WHERE f.order_id = p.order_id), lower(coalesce(nullif(p.payment_type,''),'unknown')), p.payment_value::numeric(12,2) FROM staging.stg_payments p WHERE p.validation_status='valid' AND p.order_id IS NOT NULL AND p.payment_sequential IS NOT NULL AND p.payment_value IS NOT NULL AND NOT EXISTS (SELECT 1 FROM warehouse.fact_payments f WHERE f.order_id = p.order_id AND f.payment_sequential = p.payment_sequential::int)</sql>
+  </step>
+  <step_error_handling/>
+  <slave-step-copy-partition-distribution/>
+  <slave_transformation>N</slave_transformation>
+</transformation>

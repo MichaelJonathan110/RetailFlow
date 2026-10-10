@@ -1,0 +1,45 @@
+{
+  "generator": "scripts/seed_demo.py",
+  "seed": 20240617,
+  "synthetic": true,
+  "note": "Synthetic fixture generated deterministically from SEED. It is NOT real Olist data; it mimics the schema and statistics of the public Olist e-commerce dataset so the platform can be demonstrated without redistributing third-party data.",
+  "orders": 1500,
+  "order_items": 2327,
+  "customers": 1724,
+  "products": 125,
+  "sellers": 16,
+  "payments": 4206,
+  "injected_defects": {
+    "null_order_id": 3,
+    "non_numeric_price": 2,
+    "negative_price": 2,
+    "duplicate_key": 2,
+    "bad_date": 2,
+    "unknown_status": 3,
+    "orphan_product": 2,
+    "missing_freight": 2
+  },
+  "injected_defect_rows": 18,
+  "files": {
+    "order_items.csv": {
+      "rows": 2327,
+      "sha256_16": "97e4c57416d1a219"
+    },
+    "customers.csv": {
+      "rows": 1724,
+      "sha256_16": "7d4616ff5208f18f"
+    },
+    "products.csv": {
+      "rows": 125,
+      "sha256_16": "e7242e7002894e6a"
+    },
+    "sellers.csv": {
+      "rows": 16,
+      "sha256_16": "1c016c52d8233d54"
+    },
+    "payments.csv": {
+      "rows": 4206,
+      "sha256_16": "21da4ad49b5305cc"
+    }
+  }
+}

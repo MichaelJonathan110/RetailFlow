@@ -1,0 +1,57 @@
+# ---- secrets ----
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---- node ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ---- generated data ----
+sample-data/*.csv
+uploads/
+!sample-data/manifest.json
+
+# ---- logs / runtime ----
+*.log
+dev-server.log
+.pids/
+
+# ---- os / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ---- power bi ----
+*.pbix
+*.pbit
+
+# ---- local scratch / build output that must never be published ----
+_scratch/
+tmp/
+logs/
+.pids/
+*.bak
+.env.*
+!.env.example
+
+# ---- next.js build metadata ----
+tsconfig.tsbuildinfo
