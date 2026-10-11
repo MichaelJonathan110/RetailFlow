@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg://retailflow:change-me-local-dev@localhost:5434/retailflow"
     )
 
-    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,https://retail-flow-app-mekjo.vercel.app,https://retail-flow-app.vercel.app,https://retail-flow-app-git-main-mekjo.vercel.app"
 
     max_upload_mb: int = 50
     max_upload_rows: int = 500_000
