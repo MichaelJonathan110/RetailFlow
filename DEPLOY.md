@@ -45,7 +45,7 @@ Order matters: **database -> backend -> frontend -> wire CORS**.
 6. **Deploy**. Then verify:
 
    ```
-   https://<backend>.vercel.app/health
+   https://<backend>.vercel.app/api/v1/health
    ```
 
    Expect `{"status":"ok", ...}`.
@@ -90,7 +90,7 @@ the browser console with a CORS error.
 
 ## 6. Final checklist
 
-- [ ] `https://<backend>.vercel.app/health` -> ok
+- [ ] `https://<backend>.vercel.app/api/v1/health` -> ok
 - [ ] `https://<backend>.vercel.app/api/v1/analytics/summary` -> real data
 - [ ] `https://<app>.vercel.app` -> dashboard populated
 - [ ] browser console free of CORS errors
@@ -113,6 +113,6 @@ Read by `backend/app/config.py`:
 | Symptom | Cause | Fix |
 |---|---|---|
 | Vercel: "No Next.js detected" | Root Directory not set | set it to `frontend` |
-| Dashboard empty / panels error | wrong `NEXT_PUBLIC_API_BASE` | check `/health` first |
+| Dashboard empty / panels error | wrong `NEXT_PUBLIC_API_BASE` | check `/api/v1/health` first |
 | CORS error in console | `CORS_ORIGINS` unset | step 5 |
 | Backend 500 on every route | bad `DATABASE_URL` or unseeded DB | step 3 |

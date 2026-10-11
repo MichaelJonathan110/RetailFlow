@@ -107,3 +107,19 @@ def root():
         "api": settings.api_prefix,
         "docs": f"{settings.api_prefix}/docs",
     }
+
+
+@app.get("/health", include_in_schema=False)
+async def health_root_alias():
+    """Root-level alias for platform health checks (load balancers, uptime probes).
+
+    The canonical endpoint is ``{api_prefix}/health``; this mirrors it at the
+    bare ``/health`` path so infrastructure that cannot be told about the prefix
+    still gets an answer.
+    """
+    from .routers.health import health as _health
+
+    result = _health()
+    if hasattr(result, "__await__"):
+        result = await result
+    return result
