@@ -1,6 +1,6 @@
 # RetailFlow
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/MichaelJonathan110/RetailFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/MichaelJonathan110/RetailFlow/actions/workflows/ci.yml)
 
 
 **Enterprise Retail Data Warehouse, ETL Automation & Analytics Platform**
