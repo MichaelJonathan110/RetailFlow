@@ -4,6 +4,15 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# VERCEL_EXPLORER_OPTIN
+# The public demo deployment runs on Vercel (which sets VERCEL=1). Opt that
+# runtime into the read-only SQL explorer; local and CI keep the safe default
+# (off). An explicit SQL_EXPLORER_ENABLED env var always wins.
+import os as _os
+if _os.environ.get("VERCEL"):
+    _os.environ.setdefault("SQL_EXPLORER_ENABLED", "true")
+
+
 # The single source of truth for local config is the repo-root .env (see
 # .env.example). Resolve it relative to this file so the settings are identical
 # whether the process is started from the repo root, from backend/, or by pytest.
