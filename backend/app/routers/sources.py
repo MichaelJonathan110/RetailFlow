@@ -14,10 +14,13 @@ def list_sources(db: Session = Depends(get_db)):
     rows = db.execute(text("""
         SELECT s.source_id, s.name, s.source_type, s.dataset, s.description,
                s.location_hint, s.status, s.created_at,
-               (SELECT count(*) FROM ops.ingest_batch b WHERE b.source_id = s.source_id) AS batches
+               (SELECT count(*) FROM ops.ingest_batch b
+                WHERE b.source_id = s.source_id
+                   OR (b.source_id IS NULL AND b.dataset = s.dataset)) AS batches  -- DEMOFIX
         FROM app.data_source s ORDER BY s.source_id
     """)).mappings()
-    return {"items": [dict(r) for r in rows], "total": len(list(rows))}
+    items = [dict(r) for r in rows]
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/sources/{source_id}")
@@ -42,6 +45,7 @@ def source_batches(source_id: int, limit: int = Query(25, ge=1, le=200), db: Ses
                s.name AS source_name
         FROM ops.ingest_batch b LEFT JOIN app.data_source s USING (source_id)
         WHERE b.source_id = :sid
+           OR (b.source_id IS NULL AND b.dataset = (SELECT dataset FROM app.data_source WHERE source_id = :sid))
         ORDER BY b.created_at DESC LIMIT :lim
     """), {"sid": source_id, "lim": limit}).mappings()
     return {"items": [dict(r) for r in rows]}

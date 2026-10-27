@@ -120,10 +120,13 @@ def list_alerts(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get
         })
 
     recon = db.execute(text("""
-        SELECT recon_id, check_code, description, source_value, target_value,
-               difference, status, checked_at
-        FROM ops.data_reconciliation_results
-        WHERE status = 'failed'
+        SELECT * FROM (
+            SELECT DISTINCT ON (check_code) recon_id, check_code, description, source_value,
+                   target_value, difference, status, checked_at
+            FROM ops.data_reconciliation_results
+            ORDER BY check_code, checked_at DESC NULLS LAST, recon_id DESC
+        ) latest
+        WHERE status IN ('failed', 'mismatch')  -- DEMOFIX: reconcile() writes 'mismatch'
         ORDER BY checked_at DESC NULLS LAST LIMIT :lim
     """), {"lim": limit}).mappings()
     for r in recon:
@@ -136,6 +139,28 @@ def list_alerts(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get
             "occurred_at": r["checked_at"],
             "metric": float(r["difference"]) if r["difference"] is not None else None,
             "link": "/reconciliation",
+        })
+
+    # STALE_DATA: no fact load within 48h (rule was catalogued but never evaluated).
+    stale = db.execute(text("""
+        SELECT tbl, last_load, round((extract(epoch FROM now() - last_load) / 3600.0)::numeric, 1) AS age_h
+        FROM (
+            SELECT 'warehouse.fact_order_items' AS tbl, max(loaded_at) AS last_load FROM warehouse.fact_order_items
+            UNION ALL
+            SELECT 'warehouse.fact_payments', max(loaded_at) FROM warehouse.fact_payments
+        ) x
+        WHERE last_load IS NOT NULL AND last_load < now() - interval '48 hours'
+    """)).mappings()
+    for r in stale:
+        items.append({
+            "rule_code": "STALE_DATA",
+            "severity": "medium",
+            "title": f"Stale table: {r['tbl']}",
+            "detail": f"No new rows loaded for {r['age_h']} hours (threshold 48h).",
+            "subject": r["tbl"],
+            "occurred_at": r["last_load"],
+            "metric": float(r["age_h"]),
+            "link": "/freshness",
         })
 
     order = {"critical": 0, "high": 1, "medium": 2, "low": 3}

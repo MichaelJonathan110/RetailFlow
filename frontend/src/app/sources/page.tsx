@@ -48,11 +48,12 @@ export default function SourcesPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
+      if (activeId != null) fd.append('source_id', String(activeId)); // DEMOFIX
       const res = await fetch(`${API_BASE}/ingestion/upload`, { method: 'POST', body: fd });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.detail || `Upload failed (${res.status})`);
+      if (!res.ok) throw new Error(body?.error?.message || body?.detail || `Upload failed (${res.status})`);
       setUploadMsg(
-        `Uploaded ${body?.file_name || file.name} — ${formatNumber(body?.row_count ?? 0)} rows, ` +
+        `Uploaded ${body?.file_name || file.name} — ${formatNumber(body?.rows_read ?? body?.row_count ?? 0)} rows, ` +
           `${formatNumber(body?.valid_count ?? 0)} valid, ${formatNumber(body?.invalid_count ?? 0)} rejected.`,
       );
       if (fileRef.current) fileRef.current.value = '';

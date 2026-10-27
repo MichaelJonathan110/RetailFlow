@@ -29,7 +29,7 @@ def datasets():
 @router.post("/ingestion/upload", status_code=201)
 async def upload(
     file: UploadFile = File(...),
-    dataset: str = Form(...),
+    dataset: str | None = Form(None),
     source_id: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
@@ -42,6 +42,13 @@ async def upload(
                             {"sid": source_id}).scalar()
         if not exists:
             raise ValidationError(f"Unknown source_id {source_id}")
+    # DEMOFIX: the Data sources page uploads by source; derive the dataset from it.
+    if not dataset and source_id is not None:
+        dataset = db.execute(text("SELECT dataset FROM app.data_source WHERE source_id = :sid"),
+                             {"sid": source_id}).scalar()
+    if not dataset:
+        raise ValidationError("Choose the dataset this CSV belongs to.",
+                              details={"hint": "order_items, customers, products, sellers or payments"})
     return ingestion.ingest_csv(
         db, raw=raw, file_name=file.filename or "upload.csv", dataset=dataset, source_id=source_id,
     )
