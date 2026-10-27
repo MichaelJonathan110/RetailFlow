@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi } from '@/components/useApi';
@@ -48,6 +48,11 @@ export default function AlertsPage() {
   const alerts = useApi<AlertsResponse>(() => api.get<AlertsResponse>('/alerts'));
   const rules = useApi<{ items: Rule[] }>(() => api.get<{ items: Rule[] }>('/alerts/rules'));
   const [filter, setFilter] = useState<string>('all');
+  // DEMOFIX418: timestamp set in the browser only, so server and client HTML match.
+  const [checkedAt, setCheckedAt] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (alerts.data) setCheckedAt(new Date().toISOString());
+  }, [alerts.data]);
 
   const items = alerts.data?.items ?? [];
   const counts = alerts.data?.counts ?? {};
@@ -63,7 +68,7 @@ export default function AlertsPage() {
         subtitle="Operational alerts derived from real pipeline, quality, reconciliation and ingestion events."
         action={<button className="rf-btn" onClick={alerts.reload}>Refresh</button>}
         source="ops.etl_run_log, ops.data_quality_results, ops.etl_rejects, ops.ingest_batch"
-        updatedAt={new Date().toISOString()}
+        updatedAt={checkedAt}
         demo
       />
 
