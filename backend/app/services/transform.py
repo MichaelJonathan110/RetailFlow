@@ -28,9 +28,10 @@ def load_dimensions(db: Session, batch_id: str | None = None) -> dict:
     # ---------------------------------------------------------- dim_product
     res = db.execute(text("""
         INSERT INTO warehouse.dim_product (product_id, product_category, product_name)
-        SELECT DISTINCT product_id, product_category, product_name
+        SELECT DISTINCT ON (product_id) product_id, product_category, product_name
         FROM staging.stg_products
         WHERE product_id IS NOT NULL AND validation_status = 'valid'
+        ORDER BY product_id, created_at DESC, stg_id DESC
         ON CONFLICT (product_id) DO UPDATE
           SET product_category = coalesce(EXCLUDED.product_category, warehouse.dim_product.product_category),
               product_name = coalesce(EXCLUDED.product_name, warehouse.dim_product.product_name),
@@ -70,11 +71,12 @@ def load_dimensions(db: Session, batch_id: str | None = None) -> dict:
     # 1. Insert customers we have never seen.
     res = db.execute(text("""
         WITH incoming AS (
-            SELECT DISTINCT customer_id, customer_unique_id,
+            SELECT DISTINCT ON (customer_id) customer_id, customer_unique_id,
                    nullif(trim(customer_city), '') AS customer_city,
                    upper(trim(customer_state)) AS customer_state
             FROM staging.stg_customers
             WHERE customer_id IS NOT NULL AND validation_status = 'valid'
+            ORDER BY customer_id, created_at DESC, stg_id DESC  -- DEMOFIX_SCD2 latest staging row wins
         )
         INSERT INTO warehouse.dim_customer (customer_id, customer_unique_id, customer_city, customer_state)
         SELECT i.customer_id, i.customer_unique_id, i.customer_city, i.customer_state
@@ -86,11 +88,12 @@ def load_dimensions(db: Session, batch_id: str | None = None) -> dict:
     # 2. Close versions whose tracked attributes changed.
     res = db.execute(text("""
         WITH incoming AS (
-            SELECT DISTINCT customer_id,
+            SELECT DISTINCT ON (customer_id) customer_id,
                    nullif(trim(customer_city), '') AS customer_city,
                    upper(trim(customer_state)) AS customer_state
             FROM staging.stg_customers
             WHERE customer_id IS NOT NULL AND validation_status = 'valid'
+            ORDER BY customer_id, created_at DESC, stg_id DESC  -- DEMOFIX_SCD2 latest staging row wins
         )
         UPDATE warehouse.dim_customer d
         SET valid_to = now(), is_current = false
@@ -105,11 +108,12 @@ def load_dimensions(db: Session, batch_id: str | None = None) -> dict:
     if changed:
         db.execute(text("""
             WITH incoming AS (
-                SELECT DISTINCT customer_id,
+                SELECT DISTINCT ON (customer_id) customer_id,
                        nullif(trim(customer_city), '') AS customer_city,
                        upper(trim(customer_state)) AS customer_state
                 FROM staging.stg_customers
                 WHERE customer_id IS NOT NULL AND validation_status = 'valid'
+                ORDER BY customer_id, created_at DESC, stg_id DESC  -- DEMOFIX_SCD2 latest staging row wins
             ),
             latest AS (
                 SELECT customer_id, max(version) AS version FROM warehouse.dim_customer GROUP BY customer_id

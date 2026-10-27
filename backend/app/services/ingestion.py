@@ -22,7 +22,9 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..errors import ValidationError
-from .rules import Rule, build_rules
+from decimal import Decimal
+
+from .rules import Rule, _to_timestamp, build_rules
 
 log = logging.getLogger("retailflow.ingestion")
 
@@ -144,6 +146,26 @@ def create_batch(db: Session, *, source_id: int | None, dataset: str, file_name:
 def ingest_csv(db: Session, *, raw: bytes, file_name: str, dataset: str,
                source_id: int | None, run_id: uuid.UUID | None = None,
                trigger: str = "api") -> dict:
+    """Stage a CSV; if anything fails mid-way, remove the half-created batch so a
+    corrected re-upload of the same bytes is not mistaken for an idempotent replay."""
+    try:
+        return _ingest_csv_impl(db, raw=raw, file_name=file_name, dataset=dataset,
+                                source_id=source_id, run_id=run_id, trigger=trigger)
+    except Exception:
+        db.rollback()
+        try:
+            db.execute(text("DELETE FROM ops.ingest_batch WHERE file_sha256 = :ck "
+                            "AND dataset = :ds AND status = 'received'"),
+                       {"ck": hashlib.sha256(raw).hexdigest(), "ds": dataset})
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+        raise
+
+
+def _ingest_csv_impl(db: Session, *, raw: bytes, file_name: str, dataset: str,
+               source_id: int | None, run_id: uuid.UUID | None = None,
+               trigger: str = "api") -> dict:
     """Stage a CSV file and evaluate quality rules. Returns a summary dict."""
     settings = get_settings()
     started = time.perf_counter()
@@ -202,6 +224,7 @@ def ingest_csv(db: Session, *, raw: bytes, file_name: str, dataset: str,
     stats = IngestStats()
     seen_keys: set = set()
     staging_table = DATASET_TABLES[dataset]
+    col_types = _staging_types(db, staging_table)  # DEMOFIX_COERCE
     insert_cols = DATASET_COLUMNS[dataset] + ["batch_id", "row_number", "raw_payload", "validation_status"]
 
     buffer: list[dict] = []
@@ -225,7 +248,7 @@ def ingest_csv(db: Session, *, raw: bytes, file_name: str, dataset: str,
                                     "severity": rule.severity})
         normalised.pop("__seen_keys__", None)
 
-        payload = {c: normalised.get(c) for c in DATASET_COLUMNS[dataset]}
+        payload = {c: _coerce(normalised.get(c), col_types.get(c)) for c in DATASET_COLUMNS[dataset]}
         payload["batch_id"] = str(batch_id)
         payload["row_number"] = row_number
         payload["raw_payload"] = json.dumps({k: v for k, v in normalised.items()}, default=str)
@@ -292,6 +315,37 @@ def ingest_csv(db: Session, *, raw: bytes, file_name: str, dataset: str,
         "duration_ms": duration_ms,
         "idempotent_replay": False,
     }
+
+
+def _staging_types(db: Session, table: str) -> dict:
+    schema, name = table.split(".", 1)
+    rows = db.execute(text("""
+        SELECT column_name, data_type FROM information_schema.columns
+        WHERE table_schema = :s AND table_name = :t
+    """), {"s": schema, "t": name}).all()
+    return {r[0]: r[1] for r in rows}
+
+
+def _coerce(value, data_type):
+    """A typed staging column cannot hold unparseable text. The value becomes NULL;
+    the original is preserved in raw_payload and the reject reason."""
+    if value is None or not data_type or data_type in ("text", "character varying", "character", "jsonb"):
+        return value
+    s = str(value).strip()
+    if s == "":
+        return None
+    try:
+        if data_type in ("integer", "bigint", "smallint"):
+            int(s)
+        elif data_type in ("numeric", "double precision", "real"):
+            if not Decimal(s).is_finite():
+                return None
+        elif data_type.startswith("timestamp") or data_type == "date":
+            if _to_timestamp(s) is None:
+                return None
+    except (ValueError, ArithmeticError):
+        return None
+    return value
 
 
 def _flush(db: Session, table: str, columns: list[str], rows: list[dict]) -> None:
