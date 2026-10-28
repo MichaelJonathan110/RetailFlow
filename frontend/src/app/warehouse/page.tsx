@@ -23,6 +23,96 @@ const kindTone = (kind: string) => {
   return 'neutral' as const;
 };
 
+type TableInfo = { summary: string; grain: string; keys: string; loaded: string; why: string };
+
+// Plain-language description of every table, shown above its technical definition.
+const TABLE_INFO: Record<string, TableInfo> = {
+  dim_date: {
+    summary: 'Calendar dimension: one row per day from 2016-01-01 to 2020-12-31.',
+    grain: 'One row per calendar day.',
+    keys: 'date_key (YYYYMMDD integer, primary key); full_date.',
+    loaded: 'Generated once by the warehouse seed script, not from an uploaded CSV.',
+    why: 'Facts carry date_key, so revenue can be grouped by year, quarter, month, week or weekday without date functions.',
+  },
+  dim_customer: {
+    summary: 'Customers with full location history (SCD Type 2).',
+    grain: 'One row per customer version.',
+    keys: 'customer_sk (surrogate key); customer_id (business key); unique (customer_id, version); a partial unique index allows only one is_current row per customer.',
+    loaded: 'Dimension Load from staging.stg_customers. When city or state changes, the current row is closed (valid_to set, is_current = false) and a new row opens with version + 1.',
+    why: 'Orders keep pointing to the customer version that was current when they were loaded, so history is never overwritten.',
+  },
+  dim_product: {
+    summary: 'Product catalogue: id, category and name.',
+    grain: 'One row per product.',
+    keys: 'product_sk (surrogate key); product_id unique.',
+    loaded: 'Upsert from staging.stg_products (SCD Type 1: latest category and name overwrite the old values).',
+    why: 'Revenue by category and top products come from joining facts to this table.',
+  },
+  dim_seller: {
+    summary: 'Marketplace sellers and their location.',
+    grain: 'One row per seller.',
+    keys: 'seller_sk (surrogate key); seller_id unique.',
+    loaded: 'Insert-only from staging.stg_sellers; an existing seller_id is left unchanged.',
+    why: 'Powers the top sellers ranking; order items with an unknown seller are rejected by the OI_SELLER_REF rule.',
+  },
+  dim_geography: {
+    summary: 'City and state with their Brazilian region (North, Northeast, Central-West, Southeast, South).',
+    grain: 'One row per (city, state).',
+    keys: 'geography_sk (surrogate key); unique (city, state).',
+    loaded: 'Derived from the customer city and state in staged order items, using a state-to-region map.',
+    why: 'Revenue by region on the Analytics page is grouped through this table.',
+  },
+  fact_order_items: {
+    summary: 'Main sales fact: every item of every order with its price and freight.',
+    grain: 'One row per order item (order_id + order_item_id).',
+    keys: 'Unique (order_id, order_item_id); foreign keys date_key, customer_sk, product_sk, seller_sk, geography_sk.',
+    loaded: 'Fact Load from valid staging rows. Only business keys not yet present are inserted, so re-running the pipeline adds 0 rows.',
+    why: 'Measures: price, freight_value, total_item_value. batch_id links every row back to the uploaded file (lineage).',
+  },
+  fact_payments: {
+    summary: 'Payment fact: each payment or installment of an order.',
+    grain: 'One row per payment (order_id + payment_sequential).',
+    keys: 'Unique (order_id, payment_sequential); date_key taken from the order.',
+    loaded: 'Fact Load from staging.stg_payments, insert-only on the business key.',
+    why: 'Different grain from fact_order_items, so the two are never joined row by row; Reconciliation compares their totals instead.',
+  },
+  stg_order_items: {
+    summary: 'Landing table for uploaded order item CSVs, exactly as received.',
+    grain: 'One row per uploaded CSV row.',
+    keys: 'stg_id; batch_id + row_number point to the exact file line.',
+    loaded: 'Written by POST /ingestion/upload. Valid and invalid rows are both kept, with raw_payload and validation_status.',
+    why: 'Nothing is discarded: rejected rows stay here and in ops.etl_rejects with the reason. Only valid rows move on to the facts.',
+  },
+  stg_customers: {
+    summary: 'Landing table for uploaded customer CSVs.',
+    grain: 'One row per uploaded CSV row (append-only).',
+    keys: 'stg_id; batch_id + row_number.',
+    loaded: 'Written by the upload. The dimension load takes the latest row per customer_id.',
+    why: 'Source of the SCD Type 2 changes in dim_customer.',
+  },
+  stg_products: {
+    summary: 'Landing table for uploaded product CSVs.',
+    grain: 'One row per uploaded CSV row (append-only).',
+    keys: 'stg_id; batch_id + row_number.',
+    loaded: 'Written by the upload. The dimension load takes the latest row per product_id.',
+    why: 'Source of dim_product.',
+  },
+  stg_sellers: {
+    summary: 'Landing table for uploaded seller CSVs.',
+    grain: 'One row per uploaded CSV row (append-only).',
+    keys: 'stg_id; batch_id + row_number.',
+    loaded: 'Written by the upload.',
+    why: 'Source of dim_seller.',
+  },
+  stg_payments: {
+    summary: 'Landing table for uploaded payment CSVs.',
+    grain: 'One row per uploaded CSV row (append-only).',
+    keys: 'stg_id; batch_id + row_number.',
+    loaded: 'Written by the upload.',
+    why: 'Source of fact_payments.',
+  },
+};
+
 export default function WarehousePage() {
   const tables = useApi<ListResponse<WarehouseTable>>(() =>
     api.get<ListResponse<WarehouseTable>>('/warehouse/tables'),
@@ -45,6 +135,8 @@ export default function WarehousePage() {
   );
 
   const d = detail.data;
+  const dTable = (d as unknown as { table?: string } | null)?.table;
+  const switching = detail.loading || (!!d && !!dTable && dTable !== active);
   const colCols: Column<Col>[] = [
     { key: 'name', header: 'Column', render: (c) => <code className="rf-mono">{c.column_name}</code> },
     { key: 'type', header: 'Type', render: (c) => c.data_type },
@@ -66,12 +158,6 @@ export default function WarehousePage() {
     }));
   }, [d]);
 
-  const tableCols: Column<WarehouseTable>[] = [
-    { key: 'table', header: 'Table', render: (t) => <code className="rf-mono">{t.table}</code> },
-    { key: 'kind', header: 'Kind', render: (t) => <Badge tone={kindTone(t.kind)}>{t.kind}</Badge> },
-    { key: 'rows', header: 'Rows', align: 'right', render: (t) => (t.rows === null ? '—' : formatNumber(t.rows)) },
-    { key: 'cols', header: 'Columns', align: 'right', render: (t) => formatNumber(t.columns) },
-  ];
 
   if (tables.loading && !tables.data) {
     return (
@@ -139,12 +225,43 @@ export default function WarehousePage() {
             ))}
           </div>
         </div>
-        <Card title={`${activeSchema || '—'} tables`} subtitle="Select a table to inspect its definition and a sample of rows.">
-          <DataTable<WarehouseTable>
-            columns={tableCols}
-            rows={visible}
-            emptyLabel="No tables in this schema."
-          />
+        <Card title={`${activeSchema || '—'} tables`} subtitle="Click a table to see what it stores, its grain and keys, its columns and a sample of rows.">
+          <div className="rf-grid rf-grid-2" role="listbox" aria-label="Tables">
+            {visible.map((t) => {
+              const on = t.table === active;
+              return (
+                <button
+                  key={t.table}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  data-table={t.table}
+                  data-active={on}
+                  className="rf-card"
+                  onClick={() => setSelected(t.table)}
+                  style={{
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    color: 'inherit',
+                    outline: on ? '3px solid currentColor' : undefined,
+                    outlineOffset: on ? 2 : undefined,
+                  }}
+                >
+                  <div className="rf-inline" style={{ justifyContent: 'space-between', gap: 8 }}>
+                    <code className="rf-mono">{t.table}</code>
+                    <Badge tone={kindTone(t.kind)}>{t.kind}</Badge>
+                  </div>
+                  <p className="rf-note" style={{ marginTop: 6 }}>{TABLE_INFO[t.table]?.summary ?? ''}</p>
+                  <span className="rf-mono" style={{ fontSize: 11 }}>
+                    {t.rows === null ? '—' : formatNumber(t.rows)} rows · {formatNumber(t.columns)} columns
+                    {on ? ' · selected' : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {visible.length === 0 && <p className="rf-note">No tables in this schema.</p>}
         </Card>
       </section>
 
@@ -160,12 +277,24 @@ export default function WarehousePage() {
               </button>
             }
           >
-            {detail.loading && !detail.data ? (
+            {switching ? (
               <Loading label="Loading table" />
             ) : detail.error ? (
               <ErrorState message={detail.error} onRetry={detail.reload} />
             ) : d ? (
               <>
+                {TABLE_INFO[active] && (
+                  <>
+                    <h4 className="rf-subhead">About this table</h4>
+                    <div className="rf-dl" data-testid="table-about">
+                      <div className="rf-dl-row"><span className="rf-dl-key">Purpose</span><span className="rf-dl-val">{TABLE_INFO[active].summary}</span></div>
+                      <div className="rf-dl-row"><span className="rf-dl-key">Grain</span><span className="rf-dl-val">{TABLE_INFO[active].grain}</span></div>
+                      <div className="rf-dl-row"><span className="rf-dl-key">Keys</span><span className="rf-dl-val">{TABLE_INFO[active].keys}</span></div>
+                      <div className="rf-dl-row"><span className="rf-dl-key">How it is loaded</span><span className="rf-dl-val">{TABLE_INFO[active].loaded}</span></div>
+                      <div className="rf-dl-row"><span className="rf-dl-key">Why it matters</span><span className="rf-dl-val">{TABLE_INFO[active].why}</span></div>
+                    </div>
+                  </>
+                )}
                 <h4 className="rf-subhead">Columns</h4>
                 <DataTable<Col> columns={colCols} rows={d.columns as Col[]} emptyLabel="No columns." />
                 {d.constraints?.length > 0 && (
