@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api, type ListResponse, type WarehouseTable, type WarehouseTableDetail } from '@/lib/api';
 import { useApi } from '@/components/useApi';
 import { Badge } from '@/components/Badge';
@@ -22,6 +22,25 @@ const kindTone = (kind: string) => {
   if (k.includes('view')) return 'neutral' as const;
   return 'neutral' as const;
 };
+
+// WH_LAYOUT2: label/value lists as one column of rows so long DDL never overlaps.
+const DL: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 };
+const ROW: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(150px, 240px) minmax(0, 1fr)',
+  gap: 14,
+  alignItems: 'start',
+};
+const KEY: CSSProperties = { overflowWrap: 'anywhere', minWidth: 0 };
+const VAL: CSSProperties = { overflowWrap: 'anywhere', minWidth: 0, whiteSpace: 'normal' };
+const CONSTRAINT_TYPE: Record<string, string> = {
+  p: 'PRIMARY KEY',
+  u: 'UNIQUE',
+  f: 'FOREIGN KEY',
+  c: 'CHECK',
+  x: 'EXCLUDE',
+};
+const SAMPLE_LIMIT = 10;
 
 type TableInfo = { summary: string; grain: string; keys: string; loaded: string; why: string };
 
@@ -136,6 +155,10 @@ export default function WarehousePage() {
 
   const d = detail.data;
   const dTable = (d as unknown as { table?: string } | null)?.table;
+  const [loadedAt, setLoadedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (detail.data) setLoadedAt(new Date().toISOString());
+  }, [detail.data]);
   const switching = detail.loading || (!!d && !!dTable && dTable !== active);
   const colCols: Column<Col>[] = [
     { key: 'name', header: 'Column', render: (c) => <code className="rf-mono">{c.column_name}</code> },
@@ -152,8 +175,8 @@ export default function WarehousePage() {
       render: (row: Record<string, unknown>) => {
         const v = row[k];
         if (v === null || v === undefined) return '—';
-        if (typeof v === 'object') return JSON.stringify(v);
-        return String(v);
+        const text = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return <span style={{ whiteSpace: 'nowrap' }}>{text}</span>;
       },
     }));
   }, [d]);
@@ -252,7 +275,7 @@ export default function WarehousePage() {
                     <code className="rf-mono">{t.table}</code>
                     <Badge tone={kindTone(t.kind)}>{t.kind}</Badge>
                   </div>
-                  <p className="rf-note" style={{ marginTop: 6 }}>{TABLE_INFO[t.table]?.summary ?? ''}</p>
+                  <p style={{ margin: '6px 0', fontSize: 13, lineHeight: 1.45 }}>{TABLE_INFO[t.table]?.summary ?? ''}</p>
                   <span className="rf-mono" style={{ fontSize: 11 }}>
                     {t.rows === null ? '—' : formatNumber(t.rows)} rows · {formatNumber(t.columns)} columns
                     {on ? ' · selected' : ''}
@@ -286,25 +309,26 @@ export default function WarehousePage() {
                 {TABLE_INFO[active] && (
                   <>
                     <h4 className="rf-subhead">About this table</h4>
-                    <div className="rf-dl" data-testid="table-about">
-                      <div className="rf-dl-row"><span className="rf-dl-key">Purpose</span><span className="rf-dl-val">{TABLE_INFO[active].summary}</span></div>
-                      <div className="rf-dl-row"><span className="rf-dl-key">Grain</span><span className="rf-dl-val">{TABLE_INFO[active].grain}</span></div>
-                      <div className="rf-dl-row"><span className="rf-dl-key">Keys</span><span className="rf-dl-val">{TABLE_INFO[active].keys}</span></div>
-                      <div className="rf-dl-row"><span className="rf-dl-key">How it is loaded</span><span className="rf-dl-val">{TABLE_INFO[active].loaded}</span></div>
-                      <div className="rf-dl-row"><span className="rf-dl-key">Why it matters</span><span className="rf-dl-val">{TABLE_INFO[active].why}</span></div>
+                    <div className="rf-dl" style={DL} data-testid="table-about">
+                      <div className="rf-dl-row" style={ROW}><span className="rf-dl-key rf-mono" style={KEY}>Purpose</span><span className="rf-dl-val" style={VAL}>{TABLE_INFO[active].summary}</span></div>
+                      <div className="rf-dl-row" style={ROW}><span className="rf-dl-key rf-mono" style={KEY}>Grain</span><span className="rf-dl-val" style={VAL}>{TABLE_INFO[active].grain}</span></div>
+                      <div className="rf-dl-row" style={ROW}><span className="rf-dl-key rf-mono" style={KEY}>Keys</span><span className="rf-dl-val" style={VAL}>{TABLE_INFO[active].keys}</span></div>
+                      <div className="rf-dl-row" style={ROW}><span className="rf-dl-key rf-mono" style={KEY}>How it is loaded</span><span className="rf-dl-val" style={VAL}>{TABLE_INFO[active].loaded}</span></div>
+                      <div className="rf-dl-row" style={ROW}><span className="rf-dl-key rf-mono" style={KEY}>Why it matters</span><span className="rf-dl-val" style={VAL}>{TABLE_INFO[active].why}</span></div>
                     </div>
                   </>
                 )}
                 <h4 className="rf-subhead">Columns</h4>
                 <DataTable<Col> columns={colCols} rows={d.columns as Col[]} emptyLabel="No columns." />
-                {d.constraints?.length > 0 && (
+                {d.constraints?.some((c) => c.type !== 'n') && (
                   <>
                     <h4 className="rf-subhead">Constraints</h4>
-                    <div className="rf-dl">
-                      {d.constraints.map((c) => (
-                        <div key={c.name} className="rf-dl-row">
-                          <span className="rf-dl-key">{c.name}</span>
-                          <span className="rf-dl-val"><Badge tone="neutral">{c.type}</Badge> {c.definition}</span>
+                    <p className="rf-note">NOT NULL rules are shown in the Nullable column above.</p>
+                    <div className="rf-dl" style={DL}>
+                      {d.constraints.filter((c) => c.type !== 'n').map((c) => (
+                        <div key={c.name} className="rf-dl-row" style={ROW}>
+                          <span className="rf-dl-key rf-mono" style={KEY}>{c.name}</span>
+                          <span className="rf-dl-val" style={VAL}><Badge tone="neutral">{CONSTRAINT_TYPE[c.type] ?? c.type}</Badge> {c.definition}</span>
                         </div>
                       ))}
                     </div>
@@ -313,11 +337,11 @@ export default function WarehousePage() {
                 {d.indexes?.length > 0 && (
                   <>
                     <h4 className="rf-subhead">Indexes</h4>
-                    <div className="rf-dl">
+                    <div className="rf-dl" style={DL}>
                       {d.indexes.map((ix) => (
-                        <div key={ix.indexname} className="rf-dl-row">
-                          <span className="rf-dl-key">{ix.indexname}</span>
-                          <span className="rf-dl-val">{ix.indexdef}</span>
+                        <div key={ix.indexname} className="rf-dl-row" style={ROW}>
+                          <span className="rf-dl-key rf-mono" style={KEY}>{ix.indexname}</span>
+                          <span className="rf-dl-val" style={VAL}>{ix.indexdef}</span>
                         </div>
                       ))}
                     </div>
@@ -325,18 +349,20 @@ export default function WarehousePage() {
                 )}
                 {sampleCols.length > 0 && (
                   <>
-                    <h4 className="rf-subhead">Sample rows</h4>
-                    <DataTable<Record<string, unknown>>
-                      columns={sampleCols}
-                      rows={d.sample_rows}
-                      emptyLabel="No sample rows available."
-                    />
+                    <h4 className="rf-subhead">Sample rows (first {Math.min(SAMPLE_LIMIT, d.sample_rows.length)})</h4>
+                    <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+                      <DataTable<Record<string, unknown>>
+                        columns={sampleCols}
+                        rows={d.sample_rows.slice(0, SAMPLE_LIMIT)}
+                        emptyLabel="No sample rows available."
+                      />
+                    </div>
                   </>
                 )}
               </>
             ) : null}
           </Card>
-          <Provenance source="GET /warehouse/tables · /warehouse/tables/{table}" updatedAt={null} note="Live PostgreSQL catalogue." />
+          <Provenance source="GET /warehouse/tables · /warehouse/tables/{table}" updatedAt={loadedAt} note="Live PostgreSQL catalogue." />
         </section>
       )}
     </>
