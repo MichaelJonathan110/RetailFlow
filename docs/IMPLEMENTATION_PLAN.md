@@ -13,7 +13,7 @@
 | Git | 2.54.0.windows.1 |
 | Docker / Compose | 29.8.0 / v5.5.1 |
 | PostgreSQL client (`psql`) | **not installed locally** → the database runs in Docker and all SQL is executed with `psql` *inside* the container |
-| Pentaho Data Integration / Spoon | **not installed** → `.ktr`/`.kjb` artifacts are authored and validated as XML, and are explicitly labelled as not executed here |
+| Pentaho Data Integration / Spoon | PDI 11.0 installed locally (`E:\data-integration`) - master job executed with Kitchen against the local DB |
 | Power BI Desktop | **not available on this host** → PBIR/PBIT binaries cannot be authored; the DAX measures, semantic model definition and report specification are provided instead |
 
 ### Design reference
@@ -73,7 +73,7 @@
 - [x] Pipeline runner with per-stage logging
 
 ### Pentaho
-- [x] 6 `.ktr` transformations + 1 master `.kjb`
+- [x] 6 `.ktr` transformations + 1 master `.kjb` (Spoon-ready layout, same SQL as the native runner)
 - [x] `pentaho/README.md` stating honestly what is and is not executed here
 
 ### Frontend (Next.js)
@@ -100,7 +100,7 @@
 ## 4. What is deliberately NOT done
 
 - **No `.pbix` file.** Power BI Desktop is not installable/available on this host; shipping a binary I cannot open or validate would be dishonest. The semantic model, measures and report spec are complete and reproducible.
-- **Pentaho artifacts are not executed.** Spoon/Carte is not installed here. The `.ktr`/`.kjb` files are valid, schema-shaped XML and are labelled accordingly in `pentaho/README.md`.
+- **Pentaho runs locally only.** The master job is executed with Kitchen against the local DB (run logged with engine `pentaho`); the cloud deployment does not run PDI.
 - **No authentication.** `AUTH_ENABLED=false`. This is a portfolio/demo build; a real deployment must add authn/authz before exposing it.
 - **The SQL explorer is off by default** (`SQL_EXPLORER_ENABLED=false`). Arbitrary SQL from a browser is a serious liability; it is opt-in and documented.
 - **No real customer data.** The fixture is synthetic by construction.

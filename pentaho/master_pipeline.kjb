@@ -1,88 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<job>
-  <name>RetailFlow Master Pipeline</name>
-  <description>Extract, validate, load dimensions, load facts, run quality and reconciliation.</description>
-  <extended_description/>
-  <job_version/>
-  <job_status>0</job_status>
-  <directory>/RetailFlow</directory>
-  <connection>
-    <name>RetailFlow-PostgreSQL</name>
-    <server>localhost</server>
-    <type>POSTGRESQL</type>
-    <access>Native</access>
-    <database>retailflow</database>
-    <port>5432</port>
-    <username>retailflow</username>
-    <password>Encrypted </password>
-  </connection>
-
-  <entries>
-    <entry>
-      <name>Start</name>
-      <type>SPECIAL</type>
-      <start>Y</start>
-      <draw>Y</draw>
-      <xloc>96</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>01 Extract order items</name>
-      <type>TRANS</type>
-      <filename>pentaho/01_extract_order_items.ktr</filename>
-      <run_configuration>local</run_configuration>
-      <xloc>288</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>02 Validate order items</name>
-      <type>TRANS</type>
-      <filename>pentaho/02_validate_order_items.ktr</filename>
-      <run_configuration>local</run_configuration>
-      <xloc>480</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>03 Load dimensions</name>
-      <type>TRANS</type>
-      <filename>pentaho/03_load_dimensions.ktr</filename>
-      <run_configuration>local</run_configuration>
-      <xloc>672</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>04 Load fact order items</name>
-      <type>TRANS</type>
-      <filename>pentaho/04_load_fact_order_items.ktr</filename>
-      <run_configuration>local</run_configuration>
-      <xloc>864</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>05 Load payments</name>
-      <type>TRANS</type>
-      <filename>pentaho/05_load_payments.ktr</filename>
-      <run_configuration>local</run_configuration>
-      <xloc>1056</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>06 Quality and reconciliation</name>
-      <type>TRANS</type>
-      <filename>pentaho/06_data_quality_and_reconciliation.ktr</filename>
-      <run_configuration>local</run_configuration>
-      <xloc>1248</xloc><yloc>64</yloc>
-    </entry>
-    <entry>
-      <name>Success</name>
-      <type>SUCCESS</type>
-      <xloc>1440</xloc><yloc>64</yloc>
-    </entry>
-  </entries>
-
-  <hops>
-    <hop><from>Start</from><to>01 Extract order items</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-    <hop><from>01 Extract order items</from><to>02 Validate order items</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-    <hop><from>02 Validate order items</from><to>03 Load dimensions</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-    <hop><from>03 Load dimensions</from><to>04 Load fact order items</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-    <hop><from>04 Load fact order items</from><to>05 Load payments</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-    <hop><from>05 Load payments</from><to>06 Quality and reconciliation</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-    <hop><from>06 Quality and reconciliation</from><to>Success</to><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop>
-  </hops>
-
-  <notepads/>
-</job>
+<job><name>RetailFlow Master Pipeline</name><description>Orchestrates the 5 RetailFlow transformations; mirrors backend/app/services/runner.py STAGE_PLAN[master].</description><extended_description/><job_version>1.0</job_version><job_status>0</job_status><directory>/</directory><created_user>RetailFlow</created_user><created_date>2026/10/30 00:00:00.000</created_date><modified_user>RetailFlow</modified_user><modified_date>2026/10/30 00:00:00.000</modified_date><parameters></parameters>
+<connection><name>RetailFlow-PostgreSQL</name><server>${RF_DB_HOST}</server><type>POSTGRESQL</type><access>Native</access><database>${RF_DB_NAME}</database><port>${RF_DB_PORT}</port><username>${RF_DB_USER}</username><password>${RF_DB_PASSWORD}</password><servername/><data_tablespace/><index_tablespace/><attributes><attribute><code>PORT_NUMBER</code><attribute>${RF_DB_PORT}</attribute></attribute><attribute><code>SUPPORTS_BOOLEAN_DATA_TYPE</code><attribute>Y</attribute></attribute><attribute><code>PRESERVE_RESERVED_WORD_CASE</code><attribute>Y</attribute></attribute></attributes></connection>
+<slaveservers></slaveservers><job-log-table><connection/><schema/><table/><size_limit_lines/><interval/><timeout_days/></job-log-table><jobentry-log-table><connection/><schema/><table/><timeout_days/></jobentry-log-table><channel-log-table><connection/><schema/><table/><timeout_days/></channel-log-table><pass_batchid>N</pass_batchid><shared_objects_file/>
+<entries>
+<entry><name>START</name><description/><type>SPECIAL</type><attributes/><start>Y</start><dummy>N</dummy><repeat>N</repeat><schedulerType>0</schedulerType><intervalSeconds>0</intervalSeconds><intervalMinutes>60</intervalMinutes><hour>12</hour><minutes>0</minutes><weekDay>1</weekDay><DayOfMonth>1</DayOfMonth><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>48</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>Open run (ops.etl_run_log)</name><description/><type>SQL</type><attributes/><sql>INSERT INTO ops.etl_run_log (run_uid, pipeline_id, trigger_type, engine, status, started_at, execution_metadata)
+SELECT gen_random_uuid(), p.pipeline_id, 'pentaho', 'pentaho', 'running', now(), jsonb_build_object('engine', 'Pentaho Data Integration', 'job', 'master_pipeline.kjb')
+FROM app.etl_pipeline p WHERE p.engine = 'pentaho' ORDER BY p.pipeline_id LIMIT 1;</sql><useVariableSubstitution>Y</useVariableSubstitution><sqlfromfile>N</sqlfromfile><sqlfilename/><sendOneStatement>Y</sendOneStatement><connection>RetailFlow-PostgreSQL</connection><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>192</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>01 Extract from staging</name><description/><type>TRANS</type><attributes/><specification_method>filename</specification_method><trans_object_id/><filename>${Internal.Entry.Current.Directory}/01_extract_staging.ktr</filename><transname/><arg_from_previous>N</arg_from_previous><params_from_previous>N</params_from_previous><exec_per_row>N</exec_per_row><clear_rows>N</clear_rows><clear_files>N</clear_files><set_logfile>N</set_logfile><logfile/><logext/><add_date>N</add_date><add_time>N</add_time><loglevel>Basic</loglevel><cluster>N</cluster><slave_server_name/><set_append_logfile>N</set_append_logfile><wait_until_finished>Y</wait_until_finished><follow_abort_remote>N</follow_abort_remote><create_parent_folder>N</create_parent_folder><logging_remote_work>N</logging_remote_work><run_configuration>Pentaho local</run_configuration><parameters><pass_all_parameters>Y</pass_all_parameters></parameters><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>336</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>02 Load dimensions (SCD2)</name><description/><type>TRANS</type><attributes/><specification_method>filename</specification_method><trans_object_id/><filename>${Internal.Entry.Current.Directory}/02_load_dimensions.ktr</filename><transname/><arg_from_previous>N</arg_from_previous><params_from_previous>N</params_from_previous><exec_per_row>N</exec_per_row><clear_rows>N</clear_rows><clear_files>N</clear_files><set_logfile>N</set_logfile><logfile/><logext/><add_date>N</add_date><add_time>N</add_time><loglevel>Basic</loglevel><cluster>N</cluster><slave_server_name/><set_append_logfile>N</set_append_logfile><wait_until_finished>Y</wait_until_finished><follow_abort_remote>N</follow_abort_remote><create_parent_folder>N</create_parent_folder><logging_remote_work>N</logging_remote_work><run_configuration>Pentaho local</run_configuration><parameters><pass_all_parameters>Y</pass_all_parameters></parameters><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>480</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>03 Load fact tables</name><description/><type>TRANS</type><attributes/><specification_method>filename</specification_method><trans_object_id/><filename>${Internal.Entry.Current.Directory}/03_load_facts.ktr</filename><transname/><arg_from_previous>N</arg_from_previous><params_from_previous>N</params_from_previous><exec_per_row>N</exec_per_row><clear_rows>N</clear_rows><clear_files>N</clear_files><set_logfile>N</set_logfile><logfile/><logext/><add_date>N</add_date><add_time>N</add_time><loglevel>Basic</loglevel><cluster>N</cluster><slave_server_name/><set_append_logfile>N</set_append_logfile><wait_until_finished>Y</wait_until_finished><follow_abort_remote>N</follow_abort_remote><create_parent_folder>N</create_parent_folder><logging_remote_work>N</logging_remote_work><run_configuration>Pentaho local</run_configuration><parameters><pass_all_parameters>Y</pass_all_parameters></parameters><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>624</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>04 Data quality checks</name><description/><type>TRANS</type><attributes/><specification_method>filename</specification_method><trans_object_id/><filename>${Internal.Entry.Current.Directory}/04_data_quality.ktr</filename><transname/><arg_from_previous>N</arg_from_previous><params_from_previous>N</params_from_previous><exec_per_row>N</exec_per_row><clear_rows>N</clear_rows><clear_files>N</clear_files><set_logfile>N</set_logfile><logfile/><logext/><add_date>N</add_date><add_time>N</add_time><loglevel>Basic</loglevel><cluster>N</cluster><slave_server_name/><set_append_logfile>N</set_append_logfile><wait_until_finished>Y</wait_until_finished><follow_abort_remote>N</follow_abort_remote><create_parent_folder>N</create_parent_folder><logging_remote_work>N</logging_remote_work><run_configuration>Pentaho local</run_configuration><parameters><pass_all_parameters>Y</pass_all_parameters></parameters><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>768</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>05 Revenue reconciliation</name><description/><type>TRANS</type><attributes/><specification_method>filename</specification_method><trans_object_id/><filename>${Internal.Entry.Current.Directory}/05_reconciliation.ktr</filename><transname/><arg_from_previous>N</arg_from_previous><params_from_previous>N</params_from_previous><exec_per_row>N</exec_per_row><clear_rows>N</clear_rows><clear_files>N</clear_files><set_logfile>N</set_logfile><logfile/><logext/><add_date>N</add_date><add_time>N</add_time><loglevel>Basic</loglevel><cluster>N</cluster><slave_server_name/><set_append_logfile>N</set_append_logfile><wait_until_finished>Y</wait_until_finished><follow_abort_remote>N</follow_abort_remote><create_parent_folder>N</create_parent_folder><logging_remote_work>N</logging_remote_work><run_configuration>Pentaho local</run_configuration><parameters><pass_all_parameters>Y</pass_all_parameters></parameters><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>912</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>06 Run summary</name><description/><type>TRANS</type><attributes/><specification_method>filename</specification_method><trans_object_id/><filename>${Internal.Entry.Current.Directory}/06_run_summary.ktr</filename><transname/><arg_from_previous>N</arg_from_previous><params_from_previous>N</params_from_previous><exec_per_row>N</exec_per_row><clear_rows>N</clear_rows><clear_files>N</clear_files><set_logfile>N</set_logfile><logfile/><logext/><add_date>N</add_date><add_time>N</add_time><loglevel>Basic</loglevel><cluster>N</cluster><slave_server_name/><set_append_logfile>N</set_append_logfile><wait_until_finished>Y</wait_until_finished><follow_abort_remote>N</follow_abort_remote><create_parent_folder>N</create_parent_folder><logging_remote_work>N</logging_remote_work><run_configuration>Pentaho local</run_configuration><parameters><pass_all_parameters>Y</pass_all_parameters></parameters><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>1056</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>Close run: succeeded</name><description/><type>SQL</type><attributes/><sql>UPDATE ops.etl_run_log r SET status = 'succeeded', finished_at = now(), duration_ms = round(extract(epoch FROM (now() - r.started_at)) * 1000, 2), rows_read = coalesce((SELECT rows_in FROM ops.etl_stage_log s WHERE s.run_id = r.run_id AND s.stage_order = 1 LIMIT 1), 0), rows_inserted = coalesce((SELECT sum(rows_out) FROM ops.etl_stage_log s WHERE s.run_id = r.run_id AND s.stage_kind = 'load'), 0), rows_rejected = coalesce((SELECT sum(rows_rejected) FROM ops.etl_stage_log s WHERE s.run_id = r.run_id), 0), execution_metadata = coalesce(r.execution_metadata, '{}'::jsonb) || jsonb_build_object('log', (SELECT jsonb_agg('stage ' || stage_order || ' ' || stage_name || ': ' || coalesce(message, '') ORDER BY stage_order) FROM ops.etl_stage_log s WHERE s.run_id = r.run_id)) WHERE r.run_id = (SELECT max(run_id) FROM ops.etl_run_log WHERE engine = 'pentaho' AND status = 'running');</sql><useVariableSubstitution>Y</useVariableSubstitution><sqlfromfile>N</sqlfromfile><sqlfilename/><sendOneStatement>Y</sendOneStatement><connection>RetailFlow-PostgreSQL</connection><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>1200</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>Success</name><description/><type>SUCCESS</type><attributes/><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>1344</xloc><yloc>176</yloc><attributes_kjc/></entry>
+<entry><name>Mark run failed</name><description/><type>SQL</type><attributes/><sql>UPDATE ops.etl_run_log r SET status = 'failed', finished_at = now(), duration_ms = round(extract(epoch FROM (now() - r.started_at)) * 1000, 2), error_summary = 'A Pentaho transformation failed - see the Kitchen/Spoon log' WHERE r.run_id = (SELECT max(run_id) FROM ops.etl_run_log WHERE engine = 'pentaho' AND status = 'running');</sql><useVariableSubstitution>Y</useVariableSubstitution><sqlfromfile>N</sqlfromfile><sqlfilename/><sendOneStatement>Y</sendOneStatement><connection>RetailFlow-PostgreSQL</connection><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>768</xloc><yloc>336</yloc><attributes_kjc/></entry>
+<entry><name>Abort</name><description/><type>ABORT</type><attributes/><message>RetailFlow Pentaho master pipeline failed</message><parallel>N</parallel><draw>Y</draw><nr>0</nr><xloc>912</xloc><yloc>336</yloc><attributes_kjc/></entry>
+</entries>
+<hops><hop><from>START</from><to>Open run (ops.etl_run_log)</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop><hop><from>Open run (ops.etl_run_log)</from><to>01 Extract from staging</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>01 Extract from staging</from><to>02 Load dimensions (SCD2)</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>02 Load dimensions (SCD2)</from><to>03 Load fact tables</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>03 Load fact tables</from><to>04 Data quality checks</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>04 Data quality checks</from><to>05 Revenue reconciliation</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>05 Revenue reconciliation</from><to>06 Run summary</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>06 Run summary</from><to>Close run: succeeded</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>Close run: succeeded</from><to>Success</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>N</unconditional></hop><hop><from>Open run (ops.etl_run_log)</from><to>Mark run failed</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>N</evaluation><unconditional>N</unconditional></hop><hop><from>01 Extract from staging</from><to>Mark run failed</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>N</evaluation><unconditional>N</unconditional></hop><hop><from>02 Load dimensions (SCD2)</from><to>Mark run failed</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>N</evaluation><unconditional>N</unconditional></hop><hop><from>03 Load fact tables</from><to>Mark run failed</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>N</evaluation><unconditional>N</unconditional></hop><hop><from>04 Data quality checks</from><to>Mark run failed</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>N</evaluation><unconditional>N</unconditional></hop><hop><from>05 Revenue reconciliation</from><to>Mark run failed</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>N</evaluation><unconditional>N</unconditional></hop><hop><from>Mark run failed</from><to>Abort</to><from_nr>0</from_nr><to_nr>0</to_nr><enabled>Y</enabled><evaluation>Y</evaluation><unconditional>Y</unconditional></hop></hops>
+<notepads><notepad><note>RetailFlow Master Pipeline (Pentaho engine)
+Same 5 stages as the web app runner: Extract -&gt; Load dimensions (SCD2) -&gt; Load facts -&gt; Data quality -&gt; Reconcile.
+Run is logged to ops.etl_run_log (engine = pentaho, trigger = pentaho) + ops.etl_stage_log, so it appears on the Runs / Monitoring pages.
+Red hops = failure path: run marked failed, job aborts.</note><xloc>48</xloc><yloc>24</yloc><width>1100</width><heigth>96</heigth><fontname>Segoe UI</fontname><fontsize>9</fontsize><fontbold>N</fontbold><fontitalic>N</fontitalic><fontcolorred>14</fontcolorred><fontcolorgreen>13</fontcolorgreen><fontcolorblue>15</fontcolorblue><backgroundcolorred>254</backgroundcolorred><backgroundcolorgreen>208</backgroundcolorgreen><backgroundcolorblue>26</backgroundcolorblue><bordercolorred>14</bordercolorred><bordercolorgreen>13</bordercolorgreen><bordercolorblue>15</bordercolorblue><drawshadow>Y</drawshadow></notepad></notepads><attributes/></job>

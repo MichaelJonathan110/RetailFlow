@@ -46,7 +46,7 @@ The UI is wired to the live API - these are real pages against the seeded wareho
 | Next.js UI: 10 pages wired to the real API | **Working** |
 | Deterministic synthetic fixture with injected defects | **Working** |
 | pytest suite incl. an end-to-end acceptance test | **Working** |
-| Pentaho `.ktr`/`.kjb` artifacts | **Authored, XML-validated — not executed** (Spoon not installed) |
+| Pentaho `.ktr`/`.kjb` artifacts | **Executed** with PDI 11 (Kitchen) against local PostgreSQL - see `pentaho/README.md` |
 | Power BI semantic model + DAX + report spec | **Complete specification — no `.pbix`** (Power BI Desktop unavailable) |
 
 ---
@@ -202,8 +202,8 @@ See `docs/testing.md`.
 1. **No `.pbix` file.** Power BI Desktop is not available on the build machine and cannot be driven
    headlessly. The semantic model, DAX measures and report specification are complete and reproducible;
    the binary is not fabricated.
-2. **Pentaho jobs are not executed.** Spoon/Carte is not installed. The `.ktr`/`.kjb` files are authored,
-   XML-validated design artifacts that mirror the working Python pipeline. `pentaho/README.md` says so plainly.
+2. **Pentaho runs locally, not in the cloud demo.** The `.ktr`/`.kjb` files run with PDI 11 (Kitchen/Spoon) against the
+local database and log to `ops.etl_run_log` (engine `pentaho`); the Vercel deployment has no PDI. See `pentaho/README.md`.
 3. **The design reference image was not available and was not inspected.** The UI was designed from the
    written requirements with an explicit token set. No claim is made about the image's contents.
 4. **No authentication.** `AUTH_ENABLED=false`. Add authn/authz before any real deployment.

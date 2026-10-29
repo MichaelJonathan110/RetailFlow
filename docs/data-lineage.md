@@ -57,5 +57,5 @@ Quality results carry both `run_id` and `batch_id`. Therefore, for any number in
 
 - No claim is made about upstream systems beyond the uploaded file. The registry in `app.data_source`
   documents where a file is *expected* to come from; it is not a verified integration.
-- Pentaho jobs are modelled as an alternative execution engine for the same logical path. They are not
-evidenced as executed here (see `pentaho/README.md`).
+- Pentaho jobs are an alternative execution engine for the same logical path: same SQL, executed with PDI 11
+  (Kitchen) against the local database and logged with engine `pentaho` (see `pentaho/README.md`).
