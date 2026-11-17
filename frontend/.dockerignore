@@ -1,0 +1,8 @@
+node_modules
+.next
+*.log
+*.pre_*
+*.bak*
+.env.local
+.env.*.local
+.env.production

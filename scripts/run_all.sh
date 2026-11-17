@@ -3,7 +3,7 @@
 # Idempotent: safe to re-run. Stops at the first real failure.
 set -euo pipefail
 
-ROOT="C:/Users/kohja/retailflow"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 step() { printf '

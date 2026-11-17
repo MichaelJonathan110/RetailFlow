@@ -6,10 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential \
- && rm -rf /var/lib/apt/lists/*
-
+# psycopg[binary] ships its own libpq, so no compiler toolchain is needed.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
