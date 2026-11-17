@@ -18,7 +18,9 @@ function Test-Docker { docker info *> $null; return ($LASTEXITCODE -eq 0) }
 
 Write-Host '[1/4] Docker Desktop'
 if (-not (Test-Docker)) {
-  Start-Process 'C:/Program Files/Docker/Docker/Docker Desktop.exe'
+  $dd = @("$env:LOCALAPPDATA/Programs/DockerDesktop/Docker Desktop.exe", 'C:/Program Files/Docker/Docker/Docker Desktop.exe') |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($dd) { Start-Process $dd } else { Write-Host 'Docker Desktop.exe not found' -ForegroundColor Red }
   for ($i = 0; $i -lt 120; $i++) { Start-Sleep 3; if (Test-Docker) { break } }
 }
 if (-not (Test-Docker)) { Write-Host 'Docker Desktop did not start. Open it manually, then re-run.' -ForegroundColor Red; exit 1 }
